@@ -1,0 +1,79 @@
+version: '2'
+
+services:
+  testrpc:
+    extends:
+      file: docker/testrpc.yml
+      service: testrpc
+  gnosis_management:
+    depends_on:
+      - testrpc
+    extends:
+      file: docker/gnosis_management.yml
+      service: gnosis_management
+    links:
+      - testrpc
+      - gnosisdb_web
+    volumes:
+      - ./gnosis-core-contracts:/gnosis-core-contracts/
+  ipfs:
+    hostname: ipfs
+    build:
+      context: .
+      dockerfile: docker/IPFSDockerfile
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+  rabbit:
+    hostname: rabbit
+    image: rabbitmq:latest
+    environment:
+      - RABBITMQ_DEFAULT_USER=gnosisdb
+      - RABBITMQ_DEFAULT_PASS=gnosisdb
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    depends_on:
+      - gnosis_management
+  db:
+    image: postgres
+    ports:
+      - "5432:5432"
+  gnosisdb_web:
+    build:
+      context: .
+      dockerfile: docker/GnosisDBDockerfile
+    env_file:
+      - docker/.env
+    links:
+      - db
+      - testrpc
+    depends_on:
+      - db
+    working_dir: /gnosisdb/gnosisdb
+    command: sh ../run_django.sh
+    ports:
+      - "8000:8000"
+      - "27017"
+      - "5432"
+  gnosisdb_worker:
+    build:
+      context: .
+      dockerfile: docker/CeleryDockerfile
+    command: sh run_celery.sh
+    env_file:
+      - docker/.env
+    volumes:
+      - .:/app
+    links:
+      - rabbit
+    depends_on:
+      - db
+      - rabbit
+  documentation:
+    build:
+      context: .
+      dockerfile: docker/DocsDockerfile
+    command: sh run_docs.sh
+    ports:
+      - "8888:8888"
